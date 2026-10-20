@@ -38,14 +38,14 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL
             setPadding(24, 28, 24, 24); layoutDirection = View.LAYOUT_DIRECTION_RTL
         }
-        val title = TextView(this).apply { text = "راد"; textSize = 34f; gravity = Gravity.CENTER; setPadding(0,0,0,10) }
-        val subtitle = TextView(this).apply { text = "دستیار صوتی فارسی — برای اجراهای واقعی، سرویس‌های گوشی را باز می‌کند."; textSize = 16f; gravity = Gravity.CENTER; setPadding(0,0,0,18) }
-        status = TextView(this).apply { text = "آماده‌ام. فرمان را بنویسید یا صحبت کنید."; textSize = 15f; gravity = Gravity.CENTER; setPadding(8,12,8,12) }
-        input = EditText(this).apply { hint = "مثلاً: در اینترنت جستجو کن..."; textSize = 17f; setSingleLine(false); minLines = 2; textDirection = View.TEXT_DIRECTION_RTL; gravity = Gravity.RIGHT }
+        val title = TextView(this).apply { text = "روبو"; textSize = 36f; gravity = Gravity.CENTER; setPadding(0,0,0,10) }
+        val subtitle = TextView(this).apply { text = "دستیار صوتی هوشمند شما — آماده‌ی گفتگو و اجرای فرمان‌ها"; textSize = 16f; gravity = Gravity.CENTER; setPadding(0,0,0,18) }
+        status = TextView(this).apply { text = "سلام فرهاد! من روبو هستم. چطور می‌تونم کمکت کنم؟"; textSize = 15f; gravity = Gravity.CENTER; setPadding(8,12,8,12) }
+        input = EditText(this).apply { hint = "مثلاً: زنگ ساعت رو تنظیم کن، یا با علی تماس بگیر..."; textSize = 17f; setSingleLine(false); minLines = 2; textDirection = View.TEXT_DIRECTION_RTL; gravity = Gravity.RIGHT }
         val send = Button(this).apply { text = "اجرای فرمان"; setOnClickListener { handleCommand(input.text.toString()) } }
-        val mic = Button(this).apply { text = "🎙 صحبت با راد"; setOnClickListener { startOneShotRecognition() } }
-        val wake = Button(this).apply { text = "فعال‌کردن شنود «هی راد»"; setOnClickListener { startWakeService() } }
-        val stop = Button(this).apply { text = "توقف شنود پس‌زمینه"; setOnClickListener { stopService(Intent(this@MainActivity, WakeWordService::class.java)); say("شنود متوقف شد.") } }
+        val mic = Button(this).apply { text = "🎙 صحبت با روبو"; setOnClickListener { startOneShotRecognition() } }
+        val wake = Button(this).apply { text = "فعال‌کردن شنود «هی روبو»"; setOnClickListener { startWakeService() } }
+        val stop = Button(this).apply { text = "توقف شنود پس‌زمینه"; stopService(Intent(this@MainActivity, WakeWordService::class.java)); setOnClickListener { stopService(Intent(this@MainActivity, WakeWordService::class.java)); say("شنود پس‌زمینه متوقف شد.") } }
         val notifications = Button(this).apply { text = "تنظیم دسترسی اعلان‌ها"; setOnClickListener { startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) } }
         listOf(title, subtitle, status, input, send, mic, wake, stop, notifications).forEach { layout.addView(it, LinearLayout.LayoutParams(-1, if (it == input) 110 else LinearLayout.LayoutParams.WRAP_CONTENT).apply { bottomMargin = 7 }) }
         setContentView(ScrollView(this).apply { addView(layout) })
@@ -63,7 +63,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         if (requestCode == contactsRequest) {
             val name = pendingContactName; pendingContactName = null
             if (results.firstOrNull() == PackageManager.PERMISSION_GRANTED && name != null) findContact(name)
-            else say("اجازهٔ مخاطبین داده نشد.")
+            else say("اجازه دسترسی به مخاطبین داده نشد فرهاد جان.")
         }
     }
 
@@ -73,13 +73,17 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         recognizer?.destroy()
         recognizer = SpeechRecognizer.createSpeechRecognizer(this).also { sr ->
             sr.setRecognitionListener(object : RecognitionListener {
-                override fun onReadyForSpeech(params: Bundle?) { say("بفرمایید.") }
+                override fun onReadyForSpeech(params: Bundle?) { say("بفرمایید، سراپا گوشم...") }
                 override fun onBeginningOfSpeech() {}
                 override fun onRmsChanged(rmsdB: Float) {}
                 override fun onBufferReceived(buffer: ByteArray?) {}
-                override fun onEndOfSpeech() { status.text = "در حال پردازش گفتار…" }
-                override fun onError(error: Int) { status.text = "گفتار دریافت نشد؛ دوباره تلاش کنید. (کد $error)" }
-                override fun onResults(results: Bundle?) { val text = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull().orEmpty(); input.setText(text); if (text.isNotBlank()) handleCommand(text) }
+                override fun onEndOfSpeech() { status.text = "در حال پردازش صدای شما…" }
+                override fun onError(error: Int) { say("متوجه صدایت نشدم، لطفاً دوباره تلاش کن.") }
+                override fun onResults(results: Bundle?) { 
+                    val text = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull().orEmpty()
+                    if (text.isNotBlank()) { input.setText(text); handleCommand(text) }
+                    else { say("چیزی نشنیدم، دوباره بگو.") }
+                }
                 override fun onPartialResults(partialResults: Bundle?) {}
                 override fun onEvent(eventType: Int, params: Bundle?) {}
             })
@@ -96,10 +100,11 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
 
     private fun handleCommand(raw: String) {
         val command = raw.trim().replace('ي','ی').replace('ك','ک')
-        if (command.isBlank()) return
+        if (command.isBlank()) { say("لطفاً عبارتی بنویس یا صحبت کن."); return }
         status.text = "فرمان: $command"
         val lower = command.lowercase(Locale.ROOT)
         when {
+            lower.contains("سلام") || lower.contains("درود") -> say("سلام فرهاد عزیز! روبو در خدمته.")
             lower.contains("اعلان") || lower.contains("نوتیفیکیشن") -> showNotificationSummary()
             lower.contains("یادآور") || lower.contains("یادآوری") -> askReminder(command)
             lower.contains("آلارم") || lower.contains("زنگ") -> setAlarm(command)
@@ -108,37 +113,40 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             lower.contains("مسیریابی") || lower.contains("نقشه") || lower.contains("برو به") -> navigate(command)
             lower.contains("موزیک") || lower.contains("آهنگ") || lower.contains("موسیقی") -> playMusic(command)
             lower.contains("جستجو") || lower.contains("بگرد") || lower.contains("چیست") || lower.contains("چیه") || lower.startsWith("چرا") || lower.startsWith("چطور") || lower.startsWith("کیست") -> searchWeb(command)
-            else -> { say("برای این درخواست پاسخ محلی ندارم؛ جستجوی وب را باز می‌کنم."); searchWeb(command) }
+            else -> { 
+                say("فرهاد جان، این کار رو در حال حاضر نمی‌تونم مستقیماً انجام بدم؛ اما برات توی اینترنت جستجو می‌کنم.")
+                searchWeb(command) 
+            }
         }
     }
 
     private fun askReminder(command: String) {
         val edit = EditText(this).apply { setText(command.replace(Regex("یادآور(ی)?"), "").trim()); hint = "متن یادآور"; textDirection = View.TEXT_DIRECTION_RTL }
-        AlertDialog.Builder(this).setTitle("تنظیم یادآور").setMessage("یادآور یک دقیقهٔ دیگر اعلان می‌شود. متن را ویرایش کنید:").setView(edit)
+        AlertDialog.Builder(this).setTitle("تنظیم یادآور توسط روبو").setMessage("یادآور یک دقیقهٔ دیگر اعلام می‌شود. متن را تأیید کنید:").setView(edit)
             .setNegativeButton("لغو", null).setPositiveButton("تنظیم") { _, _ ->
                 val alarm = getSystemService(ALARM_SERVICE) as AlarmManager
-                val intent = Intent(this, ReminderReceiver::class.java).putExtra("text", edit.text.toString().ifBlank { "یادآوری راد" })
+                val intent = Intent(this, ReminderReceiver::class.java).putExtra("text", edit.text.toString().ifBlank { "یادآور روبو" })
                 val pi = PendingIntent.getBroadcast(this, (System.currentTimeMillis() % Int.MAX_VALUE).toInt(), intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
                 alarm.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, System.currentTimeMillis() + 60_000L, pi)
-                say("یادآور برای یک دقیقهٔ دیگر تنظیم شد.")
+                say("حله! یادآور رو برای یک دقیقه دیگه تنظیم کردم.")
             }.show()
     }
 
     private fun createReminderChannel() {
         if (Build.VERSION.SDK_INT >= 26) {
             val manager = getSystemService(NotificationManager::class.java)
-            manager.createNotificationChannel(NotificationChannel("rad_reminders", "یادآورهای راد", NotificationManager.IMPORTANCE_DEFAULT))
+            manager.createNotificationChannel(NotificationChannel("rad_reminders", "یادآورهای روبو", NotificationManager.IMPORTANCE_DEFAULT))
         }
     }
 
     private fun setAlarm(command: String) {
         val intent = Intent(AlarmClock.ACTION_SET_ALARM).putExtra(AlarmClock.EXTRA_MESSAGE, command).putExtra(AlarmClock.EXTRA_SKIP_UI, false)
-        launchSafely(intent, "برنامهٔ ساعت برای تنظیم زنگ باز می‌شود.")
+        launchSafely(intent, "برنامه ساعت رو باز می‌کنم تا زنگ رو تنظیم کنی.")
     }
 
     private fun requestContact(command: String) {
-        val name = command.replace(Regex("(?i)(لطفا|لطفاً|راد|با|به|تماس|زنگ|بزن|بگیر|شماره)"), " ").trim()
-        if (name.isBlank()) { say("نام مخاطب را هم بگویید."); return }
+        val name = command.replace(Regex("(?i)(لطفا|لطفاً|روبو|راد|با|به|تماس|زنگ|بزن|بگیر|شماره)"), " ").trim()
+        if (name.isBlank()) { say("فرهاد جان، اسم مخاطب رو نگفتی."); return }
         if (checkSelfPermission(Manifest.permission.READ_CONTACTS) != PackageManager.PERMISSION_GRANTED) { pendingContactName = name; requestPermissions(arrayOf(Manifest.permission.READ_CONTACTS), contactsRequest) }
         else findContact(name)
     }
@@ -148,59 +156,59 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         val uri = ContactsContract.CommonDataKinds.Phone.CONTENT_URI
         contentResolver.query(uri, arrayOf(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME, ContactsContract.CommonDataKinds.Phone.NUMBER), "${ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME} LIKE ?", arrayOf("%$name%"), null)?.use { c -> if (c.moveToFirst()) number = c.getString(1) }
         val found = number
-        if (found == null) { say("مخاطبی با این نام پیدا نشد."); return }
-        AlertDialog.Builder(this).setTitle("تأیید تماس").setMessage("تماس با $name، شمارهٔ $found؟ برنامهٔ شماره‌گیر باز می‌شود و تماس خودکار انجام نمی‌شود.")
+        if (found == null) { say("مخاطبی با نام $name پیدا نکردم."); return }
+        AlertDialog.Builder(this).setTitle("تأیید تماس توسط روبو").setMessage("شمارهٔ $name پیدا شد ($found). شماره‌گیر گوشی رو باز کنم؟")
             .setNegativeButton("لغو", null).setPositiveButton("بازکردن شماره‌گیر") { _, _ -> launchSafely(Intent(Intent.ACTION_DIAL, Uri.parse("tel:$found")), "") }.show()
     }
 
     private fun composeSms(command: String) {
-        val edit = EditText(this).apply { hint = "شمارهٔ گیرنده (اختیاری)"; inputType = 3 }
-        AlertDialog.Builder(this).setTitle("نوشتن پیامک").setMessage("پیام به‌صورت پیش‌نویس باز می‌شود و ارسال خودکار ندارد.").setView(edit)
+        val edit = EditText(this).apply { hint = "شماره گیرنده"; inputType = 3 }
+        AlertDialog.Builder(this).setTitle("ارسال پیامک").setMessage("شماره مخاطب را وارد کنید:").setView(edit)
             .setNegativeButton("لغو", null).setPositiveButton("ادامه") { _, _ ->
                 val recipient = edit.text.toString().trim()
                 val intent = Intent(Intent.ACTION_SENDTO, Uri.parse("smsto:${Uri.encode(recipient)}")).putExtra("sms_body", command)
-                launchSafely(intent, "برنامهٔ پیامک باز می‌شود؛ ارسال را خودتان تأیید کنید.")
+                launchSafely(intent, "برنامه پیامک رو باز کردم؛ می‌تونی پیام رو بفرستی.")
             }.show()
     }
 
     private fun showNotificationSummary() {
         val enabled = Settings.Secure.getString(contentResolver, "enabled_notification_listeners").orEmpty().contains(packageName)
-        if (!enabled) { AlertDialog.Builder(this).setTitle("دسترسی اعلان‌ها").setMessage("برای خواندن اعلان‌ها، دسترسی را در تنظیمات فعال کنید. به‌طور پیش‌فرض فقط تعداد و نام برنامه‌ها نمایش داده می‌شود؛ متن حساس اعلان‌ها خوانده یا ذخیره نمی‌شود.").setPositiveButton("تنظیمات") { _, _ -> startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) }.setNegativeButton("لغو", null).show(); return }
+        if (!enabled) { AlertDialog.Builder(this).setTitle("دسترسی اعلان‌ها").setMessage("برای خواندن تعداد اعلان‌ها، لطفاً دسترسی لازم رو فعال کن.").setPositiveButton("تنظیمات") { _, _ -> startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) }.setNegativeButton("لغو", null).show(); return }
         val summary = RadNotificationListener.summary()
         say(summary)
-        AlertDialog.Builder(this).setTitle("خلاصهٔ اعلان‌ها").setMessage(summary).setPositiveButton("باشه", null).show()
+        AlertDialog.Builder(this).setTitle("خلاصه اعلان‌ها").setMessage(summary).setPositiveButton("باشه", null).show()
     }
 
     private fun playMusic(command: String) {
         val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_APP_MUSIC)
-        if (intent.resolveActivity(packageManager) != null) launchSafely(intent, "برنامهٔ موسیقی باز می‌شود.")
-        else launchSafely(Intent(MediaStoreIntent.ACTION_MEDIA_SEARCH).putExtra("query", command), "درخواست جستجوی موسیقی ارسال شد.")
+        if (intent.resolveActivity(packageManager) != null) launchSafely(intent, "برنامه موسیقی رو باز می‌کنم.")
+        else launchSafely(Intent(MediaStoreIntent.ACTION_MEDIA_SEARCH).putExtra("query", command), "درخواست پخش موسیقی ارسال شد.")
     }
 
     private fun navigate(command: String) {
-        val place = command.replace(Regex("(?i)(راد|مسیریابی|نقشه|برو به|مسیر|برای)"), " ").trim().ifBlank { "" }
+        val place = command.replace(Regex("(?i)(روبو|راد|مسیریابی|نقشه|برو به|مسیر|برای)"), " ").trim().ifBlank { "" }
         val uri = if (place.isBlank()) Uri.parse("geo:0,0?q=") else Uri.parse("geo:0,0?q=" + Uri.encode(place))
-        launchSafely(Intent(Intent.ACTION_VIEW, uri).setPackage("com.google.android.apps.maps"), "نقشه باز می‌شود.", fallback = Intent(Intent.ACTION_VIEW, uri))
+        launchSafely(Intent(Intent.ACTION_VIEW, uri).setPackage("com.google.android.apps.maps"), "نقشه باز شد.", fallback = Intent(Intent.ACTION_VIEW, uri))
     }
 
     private fun searchWeb(command: String) {
-        val query = command.replace(Regex("(?i)(راد|لطفا|لطفاً|در اینترنت|اینترنت|جستجو کن|جستجو|بگرد)"), " ").trim().ifBlank { command }
-        launchSafely(Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com/search?q=" + Uri.encode(query))), "جستجوی وب باز می‌شود.")
+        val query = command.replace(Regex("(?i)(روبو|راد|لطفا|لطفاً|در اینترنت|اینترنت|جستجو کن|جستجو|بگرد)"), " ").trim().ifBlank { command }
+        launchSafely(Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com/search?q=" + Uri.encode(query))), "نتیجه جستجو رو در وب باز کردم.")
     }
 
     private fun launchSafely(intent: Intent, message: String, fallback: Intent? = null) {
-        try { if (intent.resolveActivity(packageManager) != null) { startActivity(intent); if (message.isNotBlank()) say(message) } else if (fallback != null) startActivity(fallback) else say("برنامهٔ مناسب روی دستگاه پیدا نشد.") }
-        catch (_: Exception) { say("بازکردن برنامه ممکن نشد.") }
+        try { if (intent.resolveActivity(packageManager) != null) { startActivity(intent); if (message.isNotBlank()) say(message) } else if (fallback != null) startActivity(fallback) else say("برنامه مناسبی روی گوشی برای این کار پیدا نکردم.") }
+        catch (_: Exception) { say("اجرای این دستور با خطا مواجه شد.") }
     }
 
     private fun startWakeService() {
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) { requestStartupPermissions(); return }
         val intent = Intent(this, WakeWordService::class.java)
-        try { if (Build.VERSION.SDK_INT >= 26) startForegroundService(intent) else startService(intent); say("تلاش برای فعال‌کردن شنود انجام شد. محدودیت‌های سازندهٔ گوشی ممکن است آن را متوقف کند.") }
-        catch (_: Exception) { say("شروع سرویس ممکن نشد؛ برنامه را باز نگه دارید و مجوز میکروفون را بررسی کنید.") }
+        try { if (Build.VERSION.SDK_INT >= 26) startForegroundService(intent) else startService(intent); say("شنود «هی روبو» فعال شد.") }
+        catch (_: Exception) { say("نشد سرویس رو فعال کنم.") }
     }
 
-    private fun say(text: String) { status.text = text; tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "rad") }
+    private fun say(text: String) { status.text = text; tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "robo") }
     override fun onInit(statusCode: Int) { if (statusCode == TextToSpeech.SUCCESS) tts?.language = Locale("fa", "IR") }
     override fun onDestroy() { recognizer?.destroy(); tts?.stop(); tts?.shutdown(); super.onDestroy() }
 
