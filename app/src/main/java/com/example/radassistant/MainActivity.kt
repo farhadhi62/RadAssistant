@@ -6,6 +6,7 @@ import android.content.*
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.*
+import android.provider.AlarmClock
 import android.provider.ContactsContract
 import android.provider.Settings
 import android.speech.*
