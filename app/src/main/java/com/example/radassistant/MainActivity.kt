@@ -11,6 +11,7 @@ import android.provider.ContactsContract
 import android.provider.Settings
 import android.speech.*
 import android.speech.tts.TextToSpeech
+import android.util.Log
 import android.view.Gravity
 import android.view.View
 import android.widget.*
@@ -20,6 +21,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     private lateinit var status: TextView
     private lateinit var input: EditText
     private var tts: TextToSpeech? = null
+    private var isTtsReady = false
     private var recognizer: SpeechRecognizer? = null
     private val permissionRequest = 101
     private val contactsRequest = 102
@@ -27,7 +29,10 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        
+        // راه‌اندازی اولیه موتور تبدیل متن به گفتار
         tts = TextToSpeech(this, this)
+        
         createReminderChannel()
         buildUi()
         requestStartupPermissions()
@@ -40,15 +45,28 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         }
         val title = TextView(this).apply { text = "روبو"; textSize = 36f; gravity = Gravity.CENTER; setPadding(0,0,0,10) }
         val subtitle = TextView(this).apply { text = "دستیار صوتی هوشمند شما — آماده‌ی گفتگو و اجرای فرمان‌ها"; textSize = 16f; gravity = Gravity.CENTER; setPadding(0,0,0,18) }
-        status = TextView(this).apply { text = "سلام فرهاد! من روبو هستم. چطور می‌تونم کمکت کنم؟"; textSize = 15f; gravity = Gravity.CENTER; setPadding(8,12,8,12) }
+        status = TextView(this).apply { text = "سلام فرهاد! من روبو هستم. در حال آماده‌سازی صدای دستیار..."; textSize = 15f; gravity = Gravity.CENTER; setPadding(8,12,8,12) }
         input = EditText(this).apply { hint = "مثلاً: زنگ ساعت رو تنظیم کن، یا با علی تماس بگیر..."; textSize = 17f; setSingleLine(false); minLines = 2; textDirection = View.TEXT_DIRECTION_RTL; gravity = Gravity.RIGHT }
         val send = Button(this).apply { text = "اجرای فرمان"; setOnClickListener { handleCommand(input.text.toString()) } }
         val mic = Button(this).apply { text = "🎙 صحبت با روبو"; setOnClickListener { startOneShotRecognition() } }
         val wake = Button(this).apply { text = "فعال‌کردن شنود «هی روبو»"; setOnClickListener { startWakeService() } }
-        val stop = Button(this).apply { text = "توقف شنود پس‌زمینه"; stopService(Intent(this@MainActivity, WakeWordService::class.java)); setOnClickListener { stopService(Intent(this@MainActivity, WakeWordService::class.java)); say("شنود پس‌زمینه متوقف شد.") } }
+        val stop = Button(this).apply { text = "توقف شنود پس‌زمینه"; setOnClickListener { stopService(Intent(this@MainActivity, WakeWordService::class.java)); say("شنود پس‌زمینه متوقف شد.") } }
+        val ttsSettings = Button(this).apply { text = "تنظیمات موتور صوتی (TTS)"; setOnClickListener { openTtsSettings() } }
         val notifications = Button(this).apply { text = "تنظیم دسترسی اعلان‌ها"; setOnClickListener { startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) } }
-        listOf(title, subtitle, status, input, send, mic, wake, stop, notifications).forEach { layout.addView(it, LinearLayout.LayoutParams(-1, if (it == input) 110 else LinearLayout.LayoutParams.WRAP_CONTENT).apply { bottomMargin = 7 }) }
+        
+        listOf(title, subtitle, status, input, send, mic, wake, stop, ttsSettings, notifications).forEach { 
+            layout.addView(it, LinearLayout.LayoutParams(-1, if (it == input) 110 else LinearLayout.LayoutParams.WRAP_CONTENT).apply { bottomMargin = 7 }) 
+        }
         setContentView(ScrollView(this).apply { addView(layout) })
+    }
+
+    private fun openTtsSettings() {
+        try {
+            val intent = Intent("com.android.settings.TTS_SETTINGS")
+            startActivity(intent)
+        } catch (_: Exception) {
+            startActivity(Intent(Settings.ACTION_SETTINGS))
+        }
     }
 
     private fun requestStartupPermissions() {
@@ -114,7 +132,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             lower.contains("موزیک") || lower.contains("آهنگ") || lower.contains("موسیقی") -> playMusic(command)
             lower.contains("جستجو") || lower.contains("بگرد") || lower.contains("چیست") || lower.contains("چیه") || lower.startsWith("چرا") || lower.startsWith("چطور") || lower.startsWith("کیست") -> searchWeb(command)
             else -> { 
-                say("فرهاد جان، این کار رو در حال حاضر نمی‌تونم مستقیماً انجام بدم؛ اما برات توی اینترنت جستجو می‌کنم.")
+                say("فرهاد جان، برات توی اینترنت جستجو می‌کنم.")
                 searchWeb(command) 
             }
         }
@@ -208,9 +226,41 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         catch (_: Exception) { say("نشد سرویس رو فعال کنم.") }
     }
 
-    private fun say(text: String) { status.text = text; tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "robo") }
-    override fun onInit(statusCode: Int) { if (statusCode == TextToSpeech.SUCCESS) tts?.language = Locale("fa", "IR") }
-    override fun onDestroy() { recognizer?.destroy(); tts?.stop(); tts?.shutdown(); super.onDestroy() }
+    private fun say(text: String) {
+        status.text = text
+        if (isTtsReady && tts != null) {
+            tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "robo_${System.currentTimeMillis()}")
+        } else {
+            Log.w("RoboTTS", "TTS is not ready yet.")
+        }
+    }
+
+    override fun onInit(statusCode: Int) {
+        if (statusCode == TextToSpeech.SUCCESS) {
+            val faLocale = Locale("fa", "IR")
+            val result = tts?.setLanguage(faLocale)
+            
+            if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
+                // اگر صدای فارسی در موتور نصب نبود، زبان پیش‌فرض سیستم را می‌گذاریم تا لااقل صحبت کند و قطع نشود
+                tts?.language = Locale.getDefault()
+                status.text = "روبو آماده است. (نکته: دیتای صوتی فارسی TTS روی گوشی نصب نیست)"
+            } else {
+                status.text = "سلام فرهاد! صدای روبو آماده است."
+                say("سلام فرهاد عزیز! من روبو هستم.")
+            }
+            isTtsReady = true
+        } else {
+            status.text = "خطا در اتصال به سرویس صوتی گوشی."
+            isTtsReady = false
+        }
+    }
+
+    override fun onDestroy() {
+        recognizer?.destroy()
+        tts?.stop()
+        tts?.shutdown()
+        super.onDestroy()
+    }
 
     private object MediaStoreIntent { const val ACTION_MEDIA_SEARCH = "android.intent.action.MEDIA_SEARCH" }
 }
